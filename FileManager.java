@@ -1,103 +1,129 @@
 import java.io.*;
 import java.nio.file.*;
 import java.util.*;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 
 public class FileManager {
     private static final String DATA_DIR = "data/";
     private static final String EXPENSE_FILE = "expenses.txt";
     private static final String USER_FILE = "users.txt";
+    private static final String GROUP_FILE = "groups.txt";
+    private static final DateTimeFormatter dtf = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
 
-    // Initialize data directory
     static {
-        try {
-            Files.createDirectories(Paths.get(DATA_DIR));
-        } catch (IOException e) {
-            System.out.println("Error creating data directory: " + e.getMessage());
-        }
+        new File(DATA_DIR).mkdirs();
     }
 
-    // Save all data
-    public static void saveAllData(List<User> users, List<Expense> expenses) {
+    public static void saveAllData(List<User> users, List<Expense> expenses, List<Group> groups) {
         saveUsers(users);
         saveExpenses(expenses);
+        saveGroups(groups);
     }
 
-    // Save expenses
-    private static void saveExpenses(List<Expense> expenses) {
-        try (PrintWriter writer = new PrintWriter(DATA_DIR + EXPENSE_FILE)) {
-            for (Expense e : expenses) {
-                writer.println(String.join("|",
-                        e.getTitle(),
-                        e.getDescription(),
-                        String.valueOf(e.getAmount()),
-                        e.getPayer(),
-                        String.join(",", e.getParticipants()),
-                        e.getTimestamp()
-                ));
-            }
-        } catch (IOException e) {
-            System.out.println("Error saving expenses: " + e.getMessage());
-        }
-    }
-
-    // Save users
-    private static void saveUsers(List<User> users) {
+    public static void saveUsers(List<User> users) {
         try (PrintWriter writer = new PrintWriter(DATA_DIR + USER_FILE)) {
-            for (User u : users) {
-                writer.println(String.join("|",
-                        u.getUsername(),
-                        u.getPassword(),
-                        u.getName(),
-                        u.getEmail()
-                ));
+            for (User user : users) {
+                writer.println(user.getUsername() + "|" +
+                        user.getName() + "|" +
+                        user.getEmail() + "|" +
+                        user.getCurrency() + "|" +
+                        String.join(",", user.getCategories()));
             }
         } catch (IOException e) {
-            System.out.println("Error saving users: " + e.getMessage());
+            e.printStackTrace();
         }
     }
 
-    // Load all data
-    public static Map<String, List<?>> loadAllData() {
-        Map<String, List<?>> data = new HashMap<>();
-        data.put("users", loadUsers());
-        data.put("expenses", loadExpenses());
-        return data;
+    public static void saveExpenses(List<Expense> expenses) {
+        try (PrintWriter writer = new PrintWriter(DATA_DIR + EXPENSE_FILE)) {
+            for (Expense expense : expenses) {
+                writer.println(expense.getTitle() + "|" +
+                        expense.getDescription() + "|" +
+                        expense.getAmount() + "|" +
+                        expense.getPayer() + "|" +
+                        String.join(",", expense.getParticipants()) + "|" +
+                        expense.getTimestamp() + "|" +
+                        expense.getCategory() + "|" +
+                        (expense.getGroupId() != null ? expense.getGroupId() : ""));
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
     }
 
-    // Load expenses
+    public static void saveGroups(List<Group> groups) {
+        try (PrintWriter writer = new PrintWriter(DATA_DIR + GROUP_FILE)) {
+            for (Group group : groups) {
+                writer.println(group.getGroupId() + "|" +
+                        group.getGroupName() + "|" +
+                        group.getDescription() + "|" +
+                        group.getCreator() + "|" +
+                        String.join(",", group.getMembers()) + "|" +
+                        dtf.format(group.getCreatedAt()));
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    public static List<User> loadUsers() {
+        List<User> users = new ArrayList<>();
+        try (Scanner scanner = new Scanner(new File(DATA_DIR + USER_FILE))) {
+            while (scanner.hasNextLine()) {
+                String[] parts = scanner.nextLine().split("\\|");
+                if (parts.length >= 4) {
+                    User user = new User(parts[0], parts[1], parts[2], parts[3]);
+                    if (parts.length >= 5) user.setCurrency(parts[4]);
+                    if (parts.length >= 6) {
+                        for (String category : parts[5].split(",")) {
+                            if (!category.isEmpty()) user.addCategory(category);
+                        }
+                    }
+                    users.add(user);
+                }
+            }
+        } catch (IOException e) {
+            // File doesn't exist yet
+        }
+        return users;
+    }
+
     public static List<Expense> loadExpenses() {
         List<Expense> expenses = new ArrayList<>();
-        try (BufferedReader reader = Files.newBufferedReader(Paths.get(DATA_DIR + EXPENSE_FILE))) {
-            String line;
-            while ((line = reader.readLine()) != null) {
-                String[] parts = line.split("\\|");
-                if (parts.length == 6) {
+        try (Scanner scanner = new Scanner(new File(DATA_DIR + EXPENSE_FILE))) {
+            while (scanner.hasNextLine()) {
+                String[] parts = scanner.nextLine().split("\\|");
+                if (parts.length >= 7) {
+                    String groupId = parts.length >= 8 && !parts[7].isEmpty() ? parts[7] : null;
                     expenses.add(new Expense(
                             parts[0], parts[1], Double.parseDouble(parts[2]),
-                            parts[3], parts[4].split(","), parts[5]
+                            parts[3], parts[4].split(","), parts[5],
+                            parts[6], groupId
                     ));
                 }
             }
         } catch (IOException e) {
-            System.out.println("No existing expense data found. Starting fresh.");
+            // File doesn't exist yet
         }
         return expenses;
     }
 
-    // Load users
-    public static List<User> loadUsers() {
-        List<User> users = new ArrayList<>();
-        try (BufferedReader reader = Files.newBufferedReader(Paths.get(DATA_DIR + USER_FILE))) {
-            String line;
-            while ((line = reader.readLine()) != null) {
-                String[] parts = line.split("\\|");
-                if (parts.length == 4) {
-                    users.add(new User(parts[0], parts[1], parts[2], parts[3]));
+    public static List<Group> loadGroups() {
+        List<Group> groups = new ArrayList<>();
+        try (Scanner scanner = new Scanner(new File(DATA_DIR + GROUP_FILE))) {
+            while (scanner.hasNextLine()) {
+                String[] parts = scanner.nextLine().split("\\|");
+                if (parts.length == 6) {
+                    groups.add(new Group(
+                            parts[1], parts[2], parts[3],
+                            new HashSet<>(Arrays.asList(parts[4].split(",")))
+                    ));
                 }
             }
         } catch (IOException e) {
-            System.out.println("No existing user data found. Starting fresh.");
+            // File doesn't exist yet
         }
-        return users;
+        return groups;
     }
 }
